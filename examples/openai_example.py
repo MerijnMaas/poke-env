@@ -6,8 +6,9 @@ from gymnasium.utils.env_checker import check_env
 from poke_env import LocalhostServerConfiguration
 from poke_env.environment.abstract_battle import AbstractBattle
 from poke_env.player import (
-    Gen8EnvSinglePlayer,
-    ObservationType,
+    Gen8EnvSinglePlayer, 
+    ObsType,
+    #ObservationType,
     OpenAIGymEnv,
     RandomPlayer,
 )
@@ -48,7 +49,7 @@ class Gen8(Gen8EnvSinglePlayer):
     def calc_reward(self, last_battle, current_battle) -> float:
         return self.reward_computing_helper(current_battle)
 
-    def embed_battle(self, battle: AbstractBattle) -> ObservationType:
+    def embed_battle(self, battle: AbstractBattle) -> ObsType:
         to_embed = []
         fainted_mons = 0
         for mon in battle.team.values():

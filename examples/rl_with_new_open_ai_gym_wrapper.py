@@ -1,4 +1,7 @@
 import asyncio
+import tensorflow
+import keras
+from keras import models
 
 import numpy as np
 from gymnasium.spaces import Box, Space
@@ -7,9 +10,13 @@ from rl.agents.dqn import DQNAgent
 from rl.memory import SequentialMemory
 from rl.policy import EpsGreedyQPolicy, LinearAnnealedPolicy
 from tabulate import tabulate
-from tensorflow.keras.layers import Dense, Flatten
-from tensorflow.keras.models import Sequential
-from tensorflow.keras.optimizers import Adam
+#from tensorflow.keras.layers import Dense, Flatten
+#from tensorflow.keras.models import Sequential
+#from tensorflow.keras.optimizers import Adam
+
+
+
+
 
 from poke_env.environment.abstract_battle import AbstractBattle
 from poke_env.player import (
@@ -95,11 +102,11 @@ async def main():
     input_shape = (1,) + train_env.observation_space.shape
 
     # Create model
-    model = Sequential()
-    model.add(Dense(128, activation="elu", input_shape=input_shape))
-    model.add(Flatten())
-    model.add(Dense(64, activation="elu"))
-    model.add(Dense(n_action, activation="linear"))
+    model = keras.models.Sequential()
+    model.add(keras.layers.Dense(128, activation="elu", input_shape=input_shape))
+    model.add(keras.layers.Flatten())
+    model.add(keras.layers.Dense(64, activation="elu"))
+    model.add(keras.layers.Dense(n_action, activation="linear"))
 
     # Defining the DQN
     memory = SequentialMemory(limit=10000, window_length=1)
@@ -124,7 +131,7 @@ async def main():
         delta_clip=0.01,
         enable_double_dqn=True,
     )
-    dqn.compile(Adam(learning_rate=0.00025), metrics=["mae"])
+    dqn.compile(keras.optimizers.Adam(learning_rate=0.00025), metrics=["mae"])
 
     # Training the model
     dqn.fit(train_env, nb_steps=10000)

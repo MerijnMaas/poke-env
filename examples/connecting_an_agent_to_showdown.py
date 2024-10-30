@@ -7,7 +7,7 @@ from poke_env.player import RandomPlayer
 async def main():
     # We create a random player
     player = RandomPlayer(
-        account_configuration=AccountConfiguration("bot_username", "bot_password"),
+        account_configuration=AccountConfiguration("bot1", "bot1password"),
         server_configuration=ShowdownServerConfiguration,
     )
 

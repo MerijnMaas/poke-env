@@ -1,5 +1,6 @@
 import asyncio
-import tensorflow
+import tensorflow 
+#tf.keras.__version__ = __version__
 import keras
 from keras import models
 
@@ -10,10 +11,15 @@ from rl.agents.dqn import DQNAgent
 from rl.memory import SequentialMemory
 from rl.policy import EpsGreedyQPolicy, LinearAnnealedPolicy
 from tabulate import tabulate
-#from tensorflow.keras.layers import Dense, Flatten
-#from tensorflow.keras.models import Sequential
-#from tensorflow.keras.optimizers import Adam
-#test2
+from tensorflow.keras.layers import Dense, Flatten
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.optimizers import Adam
+
+
+
+
+
+
 
 
 
@@ -22,7 +28,7 @@ from poke_env.environment.abstract_battle import AbstractBattle
 from poke_env.player import (
     Gen8EnvSinglePlayer,
     MaxBasePowerPlayer,
-    ObservationType,
+    ObsType,
     RandomPlayer,
     SimpleHeuristicsPlayer,
     background_cross_evaluate,
@@ -36,7 +42,7 @@ class SimpleRLPlayer(Gen8EnvSinglePlayer):
             current_battle, fainted_value=2.0, hp_value=1.0, victory_value=30.0
         )
 
-    def embed_battle(self, battle: AbstractBattle) -> ObservationType:
+    def embed_battle(self, battle: AbstractBattle) -> ObsType:
         # -1 indicates that the move does not have a base power
         # or is not available
         moves_base_power = -np.ones(4)
@@ -46,10 +52,8 @@ class SimpleRLPlayer(Gen8EnvSinglePlayer):
                 move.base_power / 100
             )  # Simple rescaling to facilitate learning
             if move.type:
-                moves_dmg_multiplier[i] = move.type.damage_multiplier(
-                    battle.opponent_active_pokemon.type_1,
-                    battle.opponent_active_pokemon.type_2,
-                )
+                moves_dmg_multiplier[i] = battle.opponent_active_pokemon.damage_multiplier(move)
+                
 
         # We count how many pokemons have fainted in each team
         fainted_mon_team = len([mon for mon in battle.team.values() if mon.fainted]) / 6
@@ -102,11 +106,11 @@ async def main():
     input_shape = (1,) + train_env.observation_space.shape
 
     # Create model
-    model = keras.models.Sequential()
-    model.add(keras.layers.Dense(128, activation="elu", input_shape=input_shape))
-    model.add(keras.layers.Flatten())
-    model.add(keras.layers.Dense(64, activation="elu"))
-    model.add(keras.layers.Dense(n_action, activation="linear"))
+    model = Sequential()
+    model.add(Dense(128, activation="elu", input_shape=input_shape))
+    model.add(Flatten())
+    model.add(Dense(64, activation="elu"))
+    model.add(Dense(n_action, activation="linear"))
 
     # Defining the DQN
     memory = SequentialMemory(limit=10000, window_length=1)
@@ -131,7 +135,7 @@ async def main():
         delta_clip=0.01,
         enable_double_dqn=True,
     )
-    dqn.compile(keras.optimizers.Adam(learning_rate=0.00025), metrics=["mae"])
+    dqn.compile(Adam(learning_rate=0.00025), metrics=["mae"])
 
     # Training the model
     dqn.fit(train_env, nb_steps=10000)

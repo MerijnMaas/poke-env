@@ -3,6 +3,7 @@ import tensorflow
 #tf.keras.__version__ = __version__
 import keras
 from keras import models
+import random
 
 import numpy as np
 from gymnasium.spaces import Box, Space
@@ -14,6 +15,8 @@ from tabulate import tabulate
 from tensorflow.keras.layers import Dense, Flatten
 from tensorflow.keras.models import Sequential
 from tensorflow.keras.optimizers import Adam
+from poke_env.teambuilder import Teambuilder
+
 
 
 
@@ -34,6 +37,143 @@ from poke_env.player import (
     background_cross_evaluate,
     background_evaluate_player,
 )
+
+class RandomTeamFromPool(Teambuilder):
+    def __init__(self, teams):
+        self.packed_teams = []
+
+        for team in teams:
+            parsed_team = self.parse_showdown_team(team)
+            packed_team = self.join_team(parsed_team)
+            self.packed_teams.append(packed_team)
+
+    def yield_team(self):
+        return np.random.choice(self.packed_teams)
+
+# Definition of agent's team (Pokémon Showdown template)
+OUR_TEAM = """
+Pikachu-Original (M) @ Light Ball  
+Ability: Static  
+EVs: 252 Atk / 4 SpD / 252 Spe  
+Jolly Nature  
+- Volt Tackle  
+- Nuzzle  
+- Iron Tail  
+- Knock Off  
+
+Charizard @ Life Orb  
+Ability: Solar Power  
+EVs: 252 SpA / 4 SpD / 252 Spe  
+Timid Nature  
+IVs: 0 Atk  
+- Flamethrower  
+- Dragon Pulse  
+- Roost  
+- Sunny Day  
+
+Blastoise @ White Herb  
+Ability: Torrent  
+EVs: 4 Atk / 252 SpA / 252 Spe  
+Mild Nature  
+- Scald  
+- Ice Beam  
+- Earthquake  
+- Shell Smash  
+
+Venusaur @ Black Sludge  
+Ability: Chlorophyll  
+EVs: 252 SpA / 4 SpD / 252 Spe  
+Modest Nature  
+IVs: 0 Atk  
+- Giga Drain  
+- Sludge Bomb  
+- Sleep Powder  
+- Leech Seed  
+
+Sirfetch’d @ Aguav Berry  
+Ability: Steadfast  
+EVs: 248 HP / 252 Atk / 8 SpD  
+Adamant Nature  
+- Close Combat  
+- Swords Dance  
+- Poison Jab  
+- Knock Off  
+
+Tauros (M) @ Assault Vest  
+Ability: Intimidate  
+EVs: 252 Atk / 4 SpD / 252 Spe  
+Jolly Nature  
+- Double-Edge  
+- Earthquake  
+- Megahorn  
+- Iron Head  
+"""
+
+
+# Definition of opponent's team (Pokémon Showdown template)
+
+OP_TEAM = """
+Eevee @ Eviolite  
+Ability: Adaptability  
+EVs: 252 HP / 252 Atk / 4 SpD  
+Adamant Nature  
+- Quick Attack  
+- Flail  
+- Facade  
+- Wish  
+
+Vaporeon @ Leftovers  
+Ability: Hydration  
+EVs: 252 HP / 252 Def / 4 SpA  
+Bold Nature  
+IVs: 0 Atk  
+- Scald  
+- Shadow Ball  
+- Toxic  
+- Wish  
+
+Sylveon @ Aguav Berry  
+Ability: Pixilate  
+EVs: 252 HP / 252 SpA / 4 SpD  
+Modest Nature  
+IVs: 0 Atk  
+- Hyper Voice  
+- Mystical Fire  
+- Psyshock  
+- Calm Mind  
+
+Jolteon @ Assault Vest  
+Ability: Quick Feet  
+EVs: 252 SpA / 4 SpD / 252 Spe  
+Timid Nature  
+IVs: 0 Atk  
+- Thunderbolt  
+- Hyper Voice  
+- Volt Switch  
+- Shadow Ball  
+
+Leafeon @ Life Orb  
+Ability: Chlorophyll  
+EVs: 252 Atk / 4 SpD / 252 Spe  
+Adamant Nature  
+- Leaf Blade  
+- Knock Off  
+- X-Scissor  
+- Swords Dance  
+
+Umbreon @ Iapapa Berry  
+Ability: Inner Focus  
+EVs: 252 HP / 4 Atk / 252 SpD  
+Careful Nature  
+- Foul Play  
+- Body Slam  
+- Toxic  
+- Wish  
+"""
+
+teams = [OUR_TEAM, OP_TEAM]
+
+custom_builder = RandomTeamFromPool(teams)
 
 
 class SimpleRLPlayer(Gen8EnvSinglePlayer):
@@ -84,21 +224,22 @@ class SimpleRLPlayer(Gen8EnvSinglePlayer):
 async def main():
     # First test the environment to ensure the class is consistent
     # with the OpenAI API
-    opponent = RandomPlayer(battle_format="gen8randombattle")
+    opponent = RandomPlayer(battle_format="gen8anythinggoes", team=OP_TEAM)
     test_env = SimpleRLPlayer(
-        battle_format="gen8randombattle", start_challenging=True, opponent=opponent
+        battle_format="gen8anythinggoes", start_challenging=True, opponent=opponent, team=OUR_TEAM
     )
     check_env(test_env)
+    #debug this line
     test_env.close()
 
     # Create one environment for training and one for evaluation
-    opponent = RandomPlayer(battle_format="gen8randombattle")
+    opponent = RandomPlayer(battle_format="gen8anythinggoes", team=OP_TEAM)
     train_env = SimpleRLPlayer(
-        battle_format="gen8randombattle", opponent=opponent, start_challenging=True
+        battle_format="gen8anythinggoes", opponent=opponent, start_challenging=True, team=OUR_TEAM
     )
-    opponent = RandomPlayer(battle_format="gen8randombattle")
+    opponent = RandomPlayer(battle_format="gen8anythinggoes", team=OP_TEAM)
     eval_env = SimpleRLPlayer(
-        battle_format="gen8randombattle", opponent=opponent, start_challenging=True
+        battle_format="gen8anythinggoes", opponent=opponent, start_challenging=True, team=OUR_TEAM
     )
 
     # Compute dimensions
@@ -147,7 +288,7 @@ async def main():
     print(
         f"DQN Evaluation: {eval_env.n_won_battles} victories out of {eval_env.n_finished_battles} episodes"
     )
-    second_opponent = MaxBasePowerPlayer(battle_format="gen8randombattle")
+    second_opponent = MaxBasePowerPlayer(battle_format="gen8anythinggoes")
     eval_env.reset_env(restart=True, opponent=second_opponent)
     print("Results against max base power player:")
     dqn.test(eval_env, nb_episodes=100, verbose=False, visualize=False)
@@ -170,9 +311,9 @@ async def main():
     n_challenges = 50
     players = [
         eval_env.agent,
-        RandomPlayer(battle_format="gen8randombattle"),
-        MaxBasePowerPlayer(battle_format="gen8randombattle"),
-        SimpleHeuristicsPlayer(battle_format="gen8randombattle"),
+        RandomPlayer(battle_format="gen8anythinggoes", team=OP_TEAM),
+        MaxBasePowerPlayer(battle_format="gen8anythinggoes", team=OP_TEAM),
+        SimpleHeuristicsPlayer(battle_format="gen8anythinggoes", team=OP_TEAM),
     ]
     cross_eval_task = background_cross_evaluate(players, n_challenges)
     dqn.test(
@@ -192,3 +333,4 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.get_event_loop().run_until_complete(main())
+

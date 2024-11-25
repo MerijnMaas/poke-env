@@ -1,2 +1,6 @@
 tensorflow==2.11
 keras-rl2
+torch
+neptune
+scipy
+stable-baselines3

@@ -1,8 +1,8 @@
 import asyncio
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.optim as optim
-import numpy as np
 from gymnasium.spaces import Box, Space
 from gymnasium.utils.env_checker import check_env
 from poke_env.environment.abstract_battle import AbstractBattle
@@ -16,37 +16,34 @@ from poke_env.player import (
     background_evaluate_player,
 )
 
-# Define a custom player class inheriting from Gen8EnvSinglePlayer
+
 class SimpleRLPlayer(Gen8EnvSinglePlayer):
     def calc_reward(self, last_battle, current_battle) -> float:
-        """Calculate the reward based on the battle outcome."""
         return self.reward_computing_helper(
             current_battle, fainted_value=2.0, hp_value=1.0, victory_value=30.0
         )
 
     def embed_battle(self, battle: AbstractBattle) -> ObsType:
-        """Convert the current battle state into a numerical observation."""
-        moves_base_power = -np.ones(4)  # Default base power of moves
-        moves_dmg_multiplier = np.ones(4)  # Default damage multiplier
-
-        # Extract move details for the available moves
+        moves_base_power = -np.ones(4)
+        moves_dmg_multiplier = np.ones(4)
         for i, move in enumerate(battle.available_moves):
-            moves_base_power[i] = move.base_power / 100  # Normalize base power
+            moves_base_power[i] = move.base_power / 100
             if move.type:
                 moves_dmg_multiplier[i] = battle.opponent_active_pokemon.damage_multiplier(move)
 
-        # Calculate team stats (number of fainted Pokémon)
         fainted_mon_team = len([mon for mon in battle.team.values() if mon.fainted]) / 6
         fainted_mon_opponent = len([mon for mon in battle.opponent_team.values() if mon.fainted]) / 6
 
-        # Final observation vector
         final_vector = np.concatenate(
-            [moves_base_power, moves_dmg_multiplier, [fainted_mon_team, fainted_mon_opponent]]
+            [
+                moves_base_power,
+                moves_dmg_multiplier,
+                [fainted_mon_team, fainted_mon_opponent],
+            ]
         )
         return np.float32(final_vector)
 
     def describe_embedding(self) -> Space:
-        """Define the space for observations."""
         low = [-1, -1, -1, -1, 0, 0, 0, 0, 0, 0]
         high = [3, 3, 3, 3, 4, 4, 4, 4, 1, 1]
         return Box(
@@ -56,127 +53,115 @@ class SimpleRLPlayer(Gen8EnvSinglePlayer):
         )
 
 
-# Define the PyTorch DQN network
 class DQNNetwork(nn.Module):
     def __init__(self, input_dim, n_actions):
         super(DQNNetwork, self).__init__()
-        # Define the layers of the network
-        self.fc1 = nn.Linear(input_dim, 128)  # Input layer
-        self.fc2 = nn.Linear(128, 64)  # Hidden layer
-        self.fc3 = nn.Linear(64, n_actions)  # Output layer
+        self.fc1 = nn.Linear(input_dim, 64)
+        self.fc2 = nn.Linear(64, 64)
+        self.fc3 = nn.Linear(64, n_actions)
 
     def forward(self, x):
-        """Define the forward pass."""
         x = torch.relu(self.fc1(x))
         x = torch.relu(self.fc2(x))
         return self.fc3(x)
 
 
-# Define the DQN agent class
 class DQNAgent:
-    def __init__(self, model, n_actions, input_dim, memory_size, gamma=0.99, epsilon=1.0, epsilon_min=0.05, epsilon_decay=0.995, lr=0.00025):
-        self.model = model  # Main network
-        self.target_model = DQNNetwork(input_dim, n_actions)  # Target network
-        self.n_actions = n_actions  # Number of actions
-        self.memory = []  # Replay memory
-        self.memory_size = memory_size
-        self.gamma = gamma  # Discount factor for future rewards
-        self.epsilon = epsilon  # Exploration rate
-        self.epsilon_min = epsilon_min  # Minimum exploration rate
-        self.epsilon_decay = epsilon_decay  # Rate at which exploration decreases
-        self.optimizer = optim.Adam(self.model.parameters(), lr=lr)  # Optimizer
-        self.loss_fn = nn.MSELoss()  # Loss function
+    def __init__(self, input_dim, n_actions, lr=0.00025, gamma=0.5, epsilon=1.0, epsilon_decay=0.995, epsilon_min=0.05):
+        self.input_dim = input_dim
+        self.n_actions = n_actions
+        self.gamma = gamma
+        self.epsilon = epsilon
+        self.epsilon_decay = epsilon_decay
+        self.epsilon_min = epsilon_min
+        self.policy_net = DQNNetwork(input_dim, n_actions)
+        self.target_net = DQNNetwork(input_dim, n_actions)
+        self.target_net.load_state_dict(self.policy_net.state_dict())
+        self.target_net.eval()
+        self.optimizer = optim.Adam(self.policy_net.parameters(), lr=lr)
+        self.loss_fn = nn.MSELoss()
+        self.memory = []
 
     def act(self, state):
-        """Choose an action based on the current state."""
-        if np.random.rand() <= self.epsilon:
-            # Explore: choose a random action
+        if np.random.rand() < self.epsilon:
             return np.random.choice(self.n_actions)
-        # Exploit: choose the action with the highest predicted Q-value
         state_tensor = torch.tensor(state, dtype=torch.float32).unsqueeze(0)
         with torch.no_grad():
-            q_values = self.model(state_tensor)
+            q_values = self.policy_net(state_tensor)
         return torch.argmax(q_values).item()
 
     def remember(self, state, action, reward, next_state, done):
-        """Store the experience in replay memory."""
-        if len(self.memory) >= self.memory_size:
-            self.memory.pop(0)  # Remove the oldest memory if the buffer is full
         self.memory.append((state, action, reward, next_state, done))
+        if len(self.memory) > 10000:
+            self.memory.pop(0)
 
-    def replay(self, batch_size):
-        """Train the network using replay memory."""
+    def replay(self, batch_size=64):
         if len(self.memory) < batch_size:
-            return  # Not enough experiences to sample from
-        minibatch = np.random.choice(self.memory, batch_size, replace=False)
-        for state, action, reward, next_state, done in minibatch:
-            state_tensor = torch.tensor(state, dtype=torch.float32)
-            next_state_tensor = torch.tensor(next_state, dtype=torch.float32)
-            target = reward
-            if not done:
-                # Update target with discounted future reward
-                target += self.gamma * torch.max(self.target_model(next_state_tensor)).item()
-            target_f = self.model(state_tensor)
-            target_f[action] = target
-            loss = self.loss_fn(target_f, self.model(state_tensor))
-            self.optimizer.zero_grad()
-            loss.backward()
-            self.optimizer.step()
+            return
+        batch = random.sample(self.memory, batch_size)
+        states, actions, rewards, next_states, dones = zip(*batch)
 
-    def update_target_model(self):
-        """Update the target model to match the main model."""
-        self.target_model.load_state_dict(self.model.state_dict())
+        states = torch.tensor(states, dtype=torch.float32)
+        actions = torch.tensor(actions, dtype=torch.int64).unsqueeze(1)
+        rewards = torch.tensor(rewards, dtype=torch.float32)
+        next_states = torch.tensor(next_states, dtype=torch.float32)
+        dones = torch.tensor(dones, dtype=torch.float32)
+
+        q_values = self.policy_net(states).gather(1, actions).squeeze()
+        next_q_values = self.target_net(next_states).max(1)[0]
+        target_q_values = rewards + (1 - dones) * self.gamma * next_q_values
+
+        loss = self.loss_fn(q_values, target_q_values.detach())
+        self.optimizer.zero_grad()
+        loss.backward()
+        self.optimizer.step()
+
+    def update_target_network(self):
+        self.target_net.load_state_dict(self.policy_net.state_dict())
 
 
-# Define the main training and evaluation loop
 async def main():
-    # Set up opponents and environments
-    opponent = RandomPlayer(battle_format="gen8randombattle")
-    train_env = SimpleRLPlayer(battle_format="gen8randombattle", opponent=opponent, start_challenging=False)
-    eval_env = SimpleRLPlayer(battle_format="gen8randombattle", opponent=opponent, start_challenging=False)
+    opponent = RandomPlayer(battle_format="gen8anythinggoes")
+    train_env = SimpleRLPlayer(battle_format="gen8anythinggoes", opponent=opponent, start_challenging=True)
+    eval_env = SimpleRLPlayer(battle_format="gen8anythinggoes", opponent=RandomPlayer(), start_challenging=True)
 
-    # Start environments without await
-    train_env.start_challenging()
-    eval_env.start_challenging()
-
-    # Wait until the environments are active
-    while not train_env.active:
-        await asyncio.sleep(1)
-    while not eval_env.active:
-        await asyncio.sleep(1)
-
-    # Define observation space and action space
     input_dim = train_env.observation_space.shape[0]
     n_actions = train_env.action_space.n
 
-    # Initialize the DQN network and agent
-    model = DQNNetwork(input_dim, n_actions)
-    agent = DQNAgent(model, n_actions, input_dim=input_dim, memory_size=10000)
+    agent = DQNAgent(input_dim, n_actions)
 
-    # Training loop
-    for episode in range(1000):
+    episodes = 500
+    max_steps = 200
+
+    for episode in range(episodes):
         state = train_env.reset()
-        done = False
-        total_reward = 0  # Track cumulative reward for logging
-
-        while not done:
-            action = agent.act(state)  # Select an action
-            next_state, reward, done = train_env.step(action)  # Execute action
-            agent.remember(state, action, reward, next_state, done)  # Store experience
-            state = next_state  # Transition to next state
-            total_reward += reward  # Accumulate reward
-
-        # Train using replay memory
-        agent.replay(batch_size=32)
-        agent.update_target_model()
+        total_reward = 0
+        for _ in range(max_steps):
+            action = agent.act(state)
+            next_state, reward, done = train_env.step(action)[:3]
+            agent.remember(state, action, reward, next_state, done)
+            agent.replay()
+            state = next_state
+            total_reward += reward
+            if done:
+                break
+        agent.update_target_network()
         agent.epsilon = max(agent.epsilon_min, agent.epsilon * agent.epsilon_decay)
+        print(f"Episode {episode + 1}/{episodes} - Total Reward: {total_reward}")
 
-        # Logging
-        print(f"Episode {episode + 1}: Total Reward = {total_reward}, Epsilon = {agent.epsilon:.2f}")
-
-    print("Training complete. Evaluating...")
-    eval_env.close()
-
+    print("Evaluating agent...")
+    eval_rewards = []
+    for _ in range(100):
+        state = eval_env.reset()
+        total_reward = 0
+        for _ in range(max_steps):
+            action = agent.act(state)
+            state, reward, done = eval_env.step(action)[:3]
+            total_reward += reward
+            if done:
+                break
+        eval_rewards.append(total_reward)
+    print(f"Evaluation reward: {np.mean(eval_rewards)}")
 
 
 if __name__ == "__main__":

@@ -132,8 +132,18 @@ class DQNAgent:
 async def main():
     # Set up opponents and environments
     opponent = RandomPlayer(battle_format="gen8randombattle")
-    train_env = SimpleRLPlayer(battle_format="gen8randombattle", opponent=opponent, start_challenging=True)
-    eval_env = SimpleRLPlayer(battle_format="gen8randombattle", opponent=opponent, start_challenging=True)
+    train_env = SimpleRLPlayer(battle_format="gen8randombattle", opponent=opponent, start_challenging=False)
+    eval_env = SimpleRLPlayer(battle_format="gen8randombattle", opponent=opponent, start_challenging=False)
+
+    # Start environments without await
+    train_env.start_challenging()
+    eval_env.start_challenging()
+
+    # Wait until the environments are active
+    while not train_env.active:
+        await asyncio.sleep(1)
+    while not eval_env.active:
+        await asyncio.sleep(1)
 
     # Define observation space and action space
     input_dim = train_env.observation_space.shape[0]
@@ -147,16 +157,26 @@ async def main():
     for episode in range(1000):
         state = train_env.reset()
         done = False
+        total_reward = 0  # Track cumulative reward for logging
+
         while not done:
             action = agent.act(state)  # Select an action
-            next_state, reward, done, _ = train_env.step(action)  # Execute action
+            next_state, reward, done = train_env.step(action)  # Execute action
             agent.remember(state, action, reward, next_state, done)  # Store experience
             state = next_state  # Transition to next state
-        agent.replay(batch_size=32)  # Train using replay memory
-        agent.update_target_model()  # Update the target model periodically
+            total_reward += reward  # Accumulate reward
+
+        # Train using replay memory
+        agent.replay(batch_size=32)
+        agent.update_target_model()
+        agent.epsilon = max(agent.epsilon_min, agent.epsilon * agent.epsilon_decay)
+
+        # Logging
+        print(f"Episode {episode + 1}: Total Reward = {total_reward}, Epsilon = {agent.epsilon:.2f}")
 
     print("Training complete. Evaluating...")
     eval_env.close()
+
 
 
 if __name__ == "__main__":

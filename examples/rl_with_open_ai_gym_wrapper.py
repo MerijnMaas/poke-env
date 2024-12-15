@@ -149,7 +149,7 @@ if __name__ == "__main__":
     #second_eval_env = SimpleRLPlayer(battle_format="gen8randombattle", opponent=second_opponent, start_challenging=True)
     #third_eval_env = SimpleRLPlayer(battle_format="gen8randombattle", opponent=third_opponent, start_challenging=True)
     
-
+    
 
     
     vec_env_player = DummyVecEnv([lambda: env_player])
@@ -183,14 +183,14 @@ if __name__ == "__main__":
     )
 
     #dqn_model.compile(Adam(lr=0.00025), metrics=["mae"])
-    dqn_model.learn(total_timesteps=50000)
+    dqn_model.learn(total_timesteps=5000)
     dqn_model.save('DQNmodel')
     del dqn_model
     vec_env_player.close()
 
     dqn_model = DQN.load("DQNmodel", env=vec_env_player)
 
-
+    
     
     
     eval_env = SimpleRLPlayer(battle_format="gen8randombattle", opponent=opponent, start_challenging=True)
